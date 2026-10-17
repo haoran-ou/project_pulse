@@ -1,8 +1,10 @@
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from models import Meeting, MeetingUpdate
+from repositories.meeting_repository import update_meeting as write_meeting
 from services.meeting_service import(
     create_meeting_record,
     get_meeting_by_id,
@@ -93,6 +95,42 @@ class TestMeetingService(unittest.TestCase):
 
         stored_meeting = get_meeting_by_id(created_meeting["id"])
         self.assertEqual(stored_meeting, expected)
+
+    def test_notes_update_preserves_interleaved_project_rename(self):
+        created_meeting = create_meeting_record(
+            Meeting(project_name="Alpha", meeting_text="Old notes")
+        )
+        meeting_id = created_meeting["id"]
+        rename_pending = True
+
+        def write_after_rename(*args, **kwargs):
+            nonlocal rename_pending
+            # Finish another request after the notes request has read old values.
+            if rename_pending:
+                rename_pending = False
+                renamed_meeting = update_meeting_record(
+                    meeting_id, MeetingUpdate(project_name="Beta")
+                )
+                self.assertEqual(renamed_meeting["project_name"], "Beta")
+                self.assertEqual(get_meeting_by_id(meeting_id)["project_name"], "Beta")
+            return write_meeting(*args, **kwargs)
+
+        with patch(
+            "services.meeting_service.update_meeting",
+            side_effect=write_after_rename,
+        ):
+            update_meeting_record(
+                meeting_id, MeetingUpdate(meeting_text="New notes")
+            )
+
+        self.assertEqual(
+            get_meeting_by_id(meeting_id),
+            {
+                "id": meeting_id,
+                "project_name": "Beta",
+                "meeting_text": "New notes",
+            },
+        )
 
     def test_update_missing_meeting_returns_none(self):
         meeting_update = MeetingUpdate(

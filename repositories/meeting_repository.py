@@ -65,34 +65,43 @@ def fetch_meeting_by_id(meeting_id: int) -> dict | None: #表示函数可能会�
 
 def update_meeting(
     meeting_id: int,
-    project_name: str,
-    meeting_text: str,
+    project_name: str | None,
+    meeting_text: str | None,
 ) -> dict | None:
+
     connection = get_db_connection()
 
     try:
         cursor = connection.execute(
         """
         UPDATE meetings
-        SET project_name = ?, meeting_text = ?
+        SET project_name = COALESCE(?, project_name),
+            meeting_text = COALESCE(?, meeting_text)
         WHERE id = ?
         """,
         (project_name, meeting_text, meeting_id),
         )
-        connection.commit()
+
         updated_count = cursor.rowcount
+
+        if updated_count == 0:
+            return None
+
+        updated_meeting = connection.execute(
+            """
+            SELECT id, project_name, meeting_text
+            FROM meetings
+            WHERE id = ?
+            """,
+            (meeting_id,),
+        ).fetchone()
+        
+        connection.commit()
 
     finally:
         connection.close()
 
-    if updated_count == 0:
-        return None
-
-    return {
-        "id": meeting_id,
-        "project_name": project_name,
-        "meeting_text": meeting_text,
-    }
+    return dict(updated_meeting)
 
 def delete_meeting(meeting_id: int) -> dict | None:
     connection = get_db_connection()
