@@ -3,7 +3,6 @@ import secrets
 import time
 
 from repositories.session_repository import insert_session, fetch_valid_session
-from repositories.session_repository import insert_session
 
 SESSION_LIFETIME_SECONDS = 60 * 60
 

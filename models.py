@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, SecretStr
 
 class Meeting(BaseModel):
     project_name: str 
@@ -17,3 +17,7 @@ class MeetingAnalysis(BaseModel):
     summary: str
     tasks: list[AnalysisTask]
     risks: list[str]
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: SecretStr = Field(min_length=1, max_length=1024)

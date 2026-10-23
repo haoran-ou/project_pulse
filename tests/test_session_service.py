@@ -6,9 +6,9 @@ import unittest
 from unittest.mock import patch
 
 from database import get_db_connection, initialize_database
-from repositories.session_repository import fetch_valid_session
+from repositories.session_repository import delete_session, fetch_valid_session
 from repositories.user_repository import insert_user
-from services.session_service import create_session, hash_session_token
+from services.session_service import create_session, get_session_user_id, hash_session_token
 
 
 class TestSessionService(unittest.TestCase):
@@ -62,3 +62,34 @@ class TestSessionService(unittest.TestCase):
         finally:
             connection.close()
         self.assertEqual(count, 0)
+
+    def test_valid_credential_resolves_to_its_owner(self):
+        other_user = insert_user("bob", "test-only-hash-placeholder")
+        with patch("services.session_service.time.time", return_value=2000000000):
+            first_token = create_session(self.user["id"])
+            second_token = create_session(other_user["id"])
+
+        with patch("services.session_service.time.time", return_value=2000003599):
+            self.assertEqual(get_session_user_id(first_token), self.user["id"])
+            self.assertEqual(get_session_user_id(second_token), other_user["id"])
+
+    def test_unknown_credential_returns_none(self):
+        with patch("services.session_service.time.time", return_value=2000000000):
+            create_session(self.user["id"])
+            self.assertIsNone(get_session_user_id("unknown-test-token"))
+
+    def test_credential_at_or_after_expiration_returns_none(self):
+        with patch("services.session_service.time.time", return_value=2000000000):
+            token = create_session(self.user["id"])
+
+        for current_time in (2000003600, 2000003601):
+            with self.subTest(current_time=current_time):
+                with patch("services.session_service.time.time", return_value=current_time):
+                    self.assertIsNone(get_session_user_id(token))
+
+    def test_revoked_credential_returns_none(self):
+        with patch("services.session_service.time.time", return_value=2000000000):
+            token = create_session(self.user["id"])
+            delete_session(hash_session_token(token))
+
+            self.assertIsNone(get_session_user_id(token))
