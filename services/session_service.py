@@ -2,10 +2,13 @@ import hashlib
 import secrets
 import time
 
-from repositories.session_repository import insert_session, fetch_valid_session
+from repositories.session_repository import (
+    insert_session,
+    fetch_valid_session,
+    delete_session,
+)
 
 SESSION_LIFETIME_SECONDS = 60 * 60
-
 
 def hash_session_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
@@ -30,3 +33,7 @@ def get_session_user_id(token: str) -> int | None:
         return None
 
     return session["user_id"]
+
+def revoke_session(token: str) -> None:
+    token_hash = hash_session_token(token)
+    delete_session(token_hash)

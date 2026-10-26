@@ -1,11 +1,20 @@
-from fastapi import APIRouter, HTTPException, Response
-
-from models import LoginRequest
-from services.session_service import SESSION_LIFETIME_SECONDS
-from services.user_service import login_user
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
+from models import LoginRequest
+from services.user_service import login_user
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+
+from dependencies import (
+    SESSION_COOKIE_NAME,
+    require_trusted_origin,
+    require_user_id,
+)
+from services.session_service import (
+    SESSION_LIFETIME_SECONDS,
+    revoke_session,
+)
+
 
 class AuthRoute(APIRoute):
     def get_route_handler(self):
@@ -29,10 +38,10 @@ router = APIRouter(
     route_class=AuthRoute,
 )
 
-SESSION_COOKIE_NAME = "__Host-pp_session"
-
-
-@router.post("/login")
+@router.post(
+    "/login",
+    dependencies=[Depends(require_trusted_origin)],
+)
 def login(data: LoginRequest, response: Response):
     result = login_user(
         data.username,
@@ -61,3 +70,33 @@ def login(data: LoginRequest, response: Response):
         "id": result["user"]["id"],
         "username": result["user"]["username"],
     }
+
+@router.post(
+    "/logout",
+    status_code=204,
+    dependencies=[Depends(require_trusted_origin)],
+)
+def logout(request: Request):
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+
+    if token is not None:
+        revoke_session(token)
+
+    response = Response(status_code=204)
+    response.delete_cookie(
+        key=SESSION_COOKIE_NAME,
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="strict",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+@router.get("/me")
+def get_current_user(
+    response: Response,
+    user_id: int = Depends(require_user_id),
+):
+    response.headers["Cache-Control"] = "no-store"
+    return {"id": user_id}

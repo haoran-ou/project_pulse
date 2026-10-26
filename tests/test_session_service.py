@@ -6,9 +6,14 @@ import unittest
 from unittest.mock import patch
 
 from database import get_db_connection, initialize_database
-from repositories.session_repository import delete_session, fetch_valid_session
+from repositories.session_repository import fetch_valid_session
 from repositories.user_repository import insert_user
-from services.session_service import create_session, get_session_user_id, hash_session_token
+from services.session_service import (
+    create_session,
+    get_session_user_id,
+    hash_session_token,
+    revoke_session,
+)
 
 
 class TestSessionService(unittest.TestCase):
@@ -90,6 +95,31 @@ class TestSessionService(unittest.TestCase):
     def test_revoked_credential_returns_none(self):
         with patch("services.session_service.time.time", return_value=2000000000):
             token = create_session(self.user["id"])
-            delete_session(hash_session_token(token))
+            self.assertEqual(get_session_user_id(token), self.user["id"])
+            revoke_session(token)
+
+            self.assertIsNone(get_session_user_id(token))
+
+    def test_revocation_preserves_other_sessions(self):
+        other_user = insert_user("bob", "test-only-hash-placeholder")
+        with patch("services.session_service.time.time", return_value=2000000000):
+            token = create_session(self.user["id"])
+            other_device_token = create_session(self.user["id"])
+            other_user_token = create_session(other_user["id"])
+
+            revoke_session(token)
+
+            self.assertIsNone(get_session_user_id(token))
+            self.assertEqual(get_session_user_id(other_device_token), self.user["id"])
+            self.assertEqual(get_session_user_id(other_user_token), other_user["id"])
+
+    def test_repeated_and_unknown_revocation_are_harmless(self):
+        with patch("services.session_service.time.time", return_value=2000000000):
+            token = create_session(self.user["id"])
+            revoke_session("unknown-test-token")
+            self.assertEqual(get_session_user_id(token), self.user["id"])
+
+            revoke_session(token)
+            revoke_session(token)
 
             self.assertIsNone(get_session_user_id(token))
